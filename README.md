@@ -10,6 +10,20 @@ This forwarder listens for WoL packets coming through the WireGuard VPN (`wg0`) 
 - WireGuard server installed and working (`wg0` interface active)
 - Python3 installed
 
+### Enable IP forwarding
+
+```bash
+sudo nano /etc/sysctl.conf
+```
+Ensure this line is uncommented or added at the end:
+```bash
+net.ipv4.ip_forward=1
+```
+Apply Changes
+```bash
+sudo sysctl -p
+```
+
 ## 📦 Installation
 
 ### Step 1: Install Dependencies
@@ -22,6 +36,9 @@ sudo apt install python3-pip python3-scapy -y
 ### Step 2: Create Forwarder Script
 
 Save this script to `/usr/local/bin/wol_forwarder.py`:
+```bash
+sudo nano /usr/local/bin/wol_forwarder.py
+```
 
 ```python
 #!/usr/bin/env python3
