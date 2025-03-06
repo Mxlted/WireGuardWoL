@@ -23,6 +23,11 @@ Apply Changes
 ```bash
 sudo sysctl -p
 ```
+Run this if using iptables (do not if using ufw)
+```bash
+sudo iptables -A INPUT -p udp --dport <Your-Listen-Port> -j ACCEPT
+sudo iptables -A INPUT -i wg0 -p udp --dport 9 -j ACCEPT
+```
 
 ## 📦 Installation
 
