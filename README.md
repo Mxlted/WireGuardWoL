@@ -1,4 +1,7 @@
 # WireGuard Wake-on-LAN Forwarder (Python)
+WireGuard Wake on LAN
+
+WireGuard WoL
 
 This guide explains how to set up a robust and efficient Wake-on-LAN (WoL) forwarding solution using a Raspberry Pi running Debian (or Raspberry Pi OS) with WireGuard.
 
