@@ -102,12 +102,14 @@ sudo journalctl -u wol-forwarder -f
 
 ## 🧹 Clean-Up
 
-If you previously had redundant scripts/services:
+If you need to uninstall the WoL forwarder completely:
 
 ```bash
-
+sudo systemctl stop wol-forwarder
+sudo systemctl disable wol-forwarder
+sudo rm /etc/systemd/system/wol-forwarder.service
+sudo rm /usr/local/bin/wol_forwarder.py
+sudo systemctl daemon-reload
 ```
-
----
 
 ✅ **Your WireGuard Wake-on-LAN forwarder is now configured and running reliably!**
