@@ -100,7 +100,7 @@ sudo systemctl status wol-forwarder
 sudo journalctl -u wol-forwarder -f
 ```
 
-## 🧹 Clean-Up (Optional)
+## 🧹 Clean-Up
 
 If you previously had redundant scripts/services:
 
