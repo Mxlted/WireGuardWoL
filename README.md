@@ -1,13 +1,16 @@
-# Raspberry Pi WireGuard WoL Forwarding & Relay
+# WireGuard Wake-on-LAN Forwarder (Python)
 
-This guide shows how to set up a reliable Wake-on-LAN (WoL) relay and forwarder using a Raspberry Pi running Debian and WireGuard.
+This guide explains how to set up a robust and efficient Wake-on-LAN (WoL) forwarding solution using a Raspberry Pi running Debian (or Raspberry Pi OS) with WireGuard.
 
-## ✅ Prerequisites
+This forwarder listens for WoL packets coming through the WireGuard VPN (`wg0`) interface and rebroadcasts them onto your local LAN network (`eth0`).
 
-- Raspberry Pi running Debian (or Raspberry Pi OS)
-- WireGuard server installed and functional (`wg0` interface active)
+## 🚀 Prerequisites
 
-## 🛠 Installation
+- Raspberry Pi running Debian or Raspberry Pi OS
+- WireGuard server installed and working (`wg0` interface active)
+- Python3 installed
+
+## 📦 Installation
 
 ### Step 1: Install Dependencies
 
@@ -16,35 +19,51 @@ sudo apt update
 sudo apt install python3-pip python3-scapy -y
 ```
 
-### Step 2: Python Scripts
+### Step 2: Create Forwarder Script
 
-#### `/usr/local/bin/wol_forwarder.py`
+Save this script to `/usr/local/bin/wol_forwarder.py`:
 
 ```python
 #!/usr/bin/env python3
-from scapy.all import sniff, sendp, Ether, IP, UDP, Raw
+from scapy.all import sniff, Ether, IP, UDP, Raw, sendp
 
 VPN_IFACE = "wg0"
 LAN_IFACE = "eth0"
 LAN_BROADCAST_IP = "192.168.1.255"
 
+
 def forward_wol_packet(packet):
     payload = bytes(packet[Raw])
-    mac = ':'.join(f'{b:02x}' for b in payload[6:12])
-    print(f"Forwarding WoL packet for MAC: {mac_addr}")
+    mac_addr = ':'.join(f'{b:02x}' for b in payload[6:12])
+
+    print(f"✅ Detected WoL magic packet for MAC: {mac_addr}. Forwarding...")
 
     wol_packet = Ether(dst="ff:ff:ff:ff:ff:ff") / IP(dst=LAN_BROADCAST_IP) / UDP(sport=9, dport=9) / Raw(load=payload)
     sendp(wol_packet, iface=LAN_IFACE, verbose=False)
+    print(f"📤 Forwarded magic packet to LAN ({LAN_IFACE}).")
+
 
 if __name__ == "__main__":
-    sniff(iface=VPN_IFACE, filter="udp and dst port 9", prn=lambda pkt: forward_wol_packet(pkt) if Raw in pkt and pkt[Raw].load.startswith(b'\xff'*6) else None)
+    print(f"🔎 Listening for WoL packets on {VPN_IFACE}...")
+    sniff(
+        iface=VPN_IFACE,
+        filter="udp and udp dst port 9",
+        prn=lambda pkt: forward_wol_packet(pkt)
+        if Raw in pkt and bytes(pkt[Raw]).startswith(b'\xff' * 6)
+        else None,
+    )
 ```
 
-### Step 2: Setup Systemd Services
+Make the script executable:
 
-Create two services:
+```bash
+sudo chmod +x /usr/local/bin/wol_forwarder.py
+```
 
-**`wol-forwarder.service`** (`/etc/systemd/system/wol-forwarder.service`)
+### Step 2: Setup systemd Service
+
+Create a systemd service at `/etc/systemd/system/wol-forwarder.service`:
+
 ```ini
 [Unit]
 Description=WireGuard WoL Forwarder
@@ -59,64 +78,36 @@ User=root
 WantedBy=multi-user.target
 ```
 
-**`wol-relay.service`** (`/etc/systemd/system/wol-relay.service`)
-```ini
-[Unit]
-Description=WireGuard WoL Relay
-After=network.target
-
-[Service]
-ExecStart=/usr/local/bin/wol_relay.py
-Restart=always
-User=root
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### Step 2: Enable and Run
-
-Make scripts executable:
-
-```bash
-sudo chmod +x /usr/local/bin/wol_forwarder.py
-sudo chmod +x /usr/local/bin/wol_relay.py
-```
-
-Reload systemd and enable services:
+Reload and start the service:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable wol-forwarder.service
-sudo systemctl enable wol-relay.service
-sudo systemctl start wol-forwarder.service
-sudo systemctl start wol-relay.service
+sudo systemctl enable wol-forwarder
+sudo systemctl start wol-forwarder
 ```
 
-## 🔍 Check Status
+## ✅ Checking Status
+
+To confirm the service is running:
 
 ```bash
-sudo systemctl status wol-forwarder.service
-sudo systemctl status wol-relay.service
+sudo systemctl status wol-forwarder
 ```
 
-### View Logs
+### Check Logs
 
 ```bash
-sudo journalctl -u wol-forwarder.service -f
-sudo journalctl -u wol-relay.service -f
+sudo journalctl -u wol-forwarder -f
 ```
 
-## 🧹 Remove Old Bash Scripts (optional)
+## 🧹 Clean-Up (Optional)
 
-Clean up old Bash scripts and services:
+If you previously had redundant scripts/services:
 
 ```bash
-sudo systemctl stop wol-forwarder wol-relay
-sudo systemctl disable wol-forwarder wol-relay
-sudo rm /etc/systemd/system/wol-forwarder.service /etc/systemd/system/wol-relay.service
-sudo rm /usr/local/bin/wol_forwarder.sh /usr/local/bin/wolrelay.sh
-sudo systemctl daemon-reload
+
 ```
 
-Your Raspberry Pi now forwards WoL packets reliably from WireGuard clients to your LAN! 🎉
+---
+
+✅ **Your WireGuard Wake-on-LAN forwarder is now configured and running reliably!**
