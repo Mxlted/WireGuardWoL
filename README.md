@@ -1,54 +1,86 @@
 # WireGuard Wake-on-LAN Forwarder (Python)
-WireGuard Wake on LAN
 
-WireGuard WoL
+## Overview
 
-This guide explains how to set up a robust and efficient Wake-on-LAN (WoL) forwarding solution using a Raspberry Pi running Debian (or Raspberry Pi OS) with WireGuard.
+This project provides a simple and reliable Wake-on-LAN (WoL) forwarding
+service for networks connected through WireGuard.
 
-This forwarder listens for WoL packets coming through the WireGuard VPN (`wg0`) interface and rebroadcasts them onto your local LAN network (`eth0`).
+It listens for WoL magic packets on a WireGuard interface and
+rebroadcasts them to the local network. This enables remote wake
+functionality for devices on a private LAN without exposing broadcast
+traffic directly over the VPN.
 
-## 🚀 Prerequisites
+## Features
 
-- Raspberry Pi running Debian or Raspberry Pi OS
-- WireGuard server installed and working (`wg0` interface active)
-- Python3 installed
+-   Listens for WoL packets on a WireGuard interface
+-   Forwards packets to LAN broadcast address
+-   Lightweight Python implementation using Scapy
+-   Runs as a persistent systemd service
 
-### Enable IP forwarding
+## Requirements
 
-```bash
+-   Raspberry Pi or Linux host running Debian or Raspberry Pi OS
+-   WireGuard configured and active
+-   Python 3
+-   Root privileges
+
+## Network Assumptions
+
+-   WireGuard interface: `wg0`
+-   LAN interface: `eth0`
+-   LAN broadcast address: `192.168.1.255`
+
+Adjust these values in the script if your environment differs.
+
+## Installation
+
+### 1. Enable IP Forwarding
+
+Edit sysctl configuration:
+
+``` bash
 sudo nano /etc/sysctl.conf
 ```
-Ensure this line is uncommented or added at the end:
-```bash
+
+Ensure the following line is present:
+
+``` bash
 net.ipv4.ip_forward=1
 ```
-Apply Changes
-```bash
+
+Apply changes:
+
+``` bash
 sudo sysctl -p
 ```
-Run this if using iptables (do not if using ufw)
-```bash
-sudo iptables -A INPUT -p udp --dport <Your-Listen-Port> -j ACCEPT
+
+### 2. Configure Firewall (iptables only)
+
+If using iptables:
+
+``` bash
+sudo iptables -A INPUT -p udp --dport <YOUR_PORT> -j ACCEPT
 sudo iptables -A INPUT -i wg0 -p udp --dport 9 -j ACCEPT
 ```
 
-## 📦 Installation
+Skip this step if using ufw.
 
-### Step 1: Install Dependencies
+### 3. Install Dependencies
 
-```bash
+``` bash
 sudo apt update
 sudo apt install python3-pip python3-scapy -y
 ```
 
-### Step 2: Create Forwarder Script
+### 4. Create Forwarder Script
 
-Save this script to `/usr/local/bin/wol_forwarder.py`:
-```bash
+``` bash
 sudo nano /usr/local/bin/wol_forwarder.py
 ```
 
-```python
+Paste the following:
+
+``` python
 #!/usr/bin/env python3
 from scapy.all import sniff, Ether, IP, UDP, Raw, sendp
 
@@ -58,37 +90,49 @@ LAN_BROADCAST_IP = "192.168.1.255"
 
 def is_wol_magic_packet(packet):
     payload = bytes(packet[Raw])
-    return payload.startswith(b'\xff'*6)
+    return payload.startswith(b'\xff' * 6)
 
 def forward_wol_packet(packet):
     payload = bytes(packet[Raw])
     mac_addr = ':'.join(f'{b:02x}' for b in payload[6:12])
 
-    print(f"✅ Detected WoL magic packet for MAC: {mac_addr}. Forwarding...")
+    print(f"Detected WoL packet for {mac_addr}")
 
-    wol_packet = Ether(dst="ff:ff:ff:ff:ff:ff") / IP(dst=LAN_BROADCAST_IP) / UDP(sport=9, dport=9) / Raw(load=payload)
-    sendp(wol_packet, iface="eth0", verbose=False)
-    print(f"📤 Forwarded magic packet to LAN (eth0).")
+    wol_packet = (
+        Ether(dst="ff:ff:ff:ff:ff:ff")
+        / IP(dst=LAN_BROADCAST_IP)
+        / UDP(sport=9, dport=9)
+        / Raw(load=payload)
+    )
+
+    sendp(wol_packet, iface=LAN_IFACE, verbose=False)
 
 if __name__ == "__main__":
-    print("🔎 Listening for WoL packets on wg0...")
-    sniff(iface="wg0", filter="udp and udp dst port 9",
-          prn=lambda pkt: forward_wol_packet(pkt) if Raw in pkt and is_wol_magic_packet(pkt) else None)
+    print("Listening for WoL packets on wg0")
+    sniff(
+        iface=VPN_IFACE,
+        filter="udp and udp dst port 9",
+        prn=lambda pkt: forward_wol_packet(pkt)
+        if Raw in pkt and is_wol_magic_packet(pkt)
+        else None,
+    )
 ```
 
-Make the script executable:
+Make executable:
 
-```bash
+``` bash
 sudo chmod +x /usr/local/bin/wol_forwarder.py
 ```
 
-### Step 2: Setup systemd Service
+### 5. Create systemd Service
 
-Create a systemd service at `/etc/systemd/system/wol-forwarder.service`:
+``` bash
+sudo nano /etc/systemd/system/wol-forwarder.service
+```
 
-```ini
+``` ini
 [Unit]
-Description=WireGuard WoL Forwarder
+Description=WireGuard Wake-on-LAN Forwarder
 After=network.target
 
 [Service]
@@ -100,33 +144,31 @@ User=root
 WantedBy=multi-user.target
 ```
 
-Reload and start the service:
+Enable and start:
 
-```bash
+``` bash
 sudo systemctl daemon-reload
 sudo systemctl enable wol-forwarder
 sudo systemctl start wol-forwarder
 ```
 
-## ✅ Checking Status
+## Verification
 
-To confirm the service is running:
+Check service status:
 
-```bash
+``` bash
 sudo systemctl status wol-forwarder
 ```
 
-### Check Logs
+View logs:
 
-```bash
+``` bash
 sudo journalctl -u wol-forwarder -f
 ```
 
-## 🧹 Clean-Up
+## Uninstall
 
-If you need to uninstall the WoL forwarder completely:
-
-```bash
+``` bash
 sudo systemctl stop wol-forwarder
 sudo systemctl disable wol-forwarder
 sudo rm /etc/systemd/system/wol-forwarder.service
@@ -134,4 +176,9 @@ sudo rm /usr/local/bin/wol_forwarder.py
 sudo systemctl daemon-reload
 ```
 
-✅ **Your WireGuard Wake-on-LAN forwarder is now configured and running reliably!**
+## Notes
+
+-   Ensure target devices support Wake-on-LAN and have it enabled in
+    BIOS and OS settings.
+-   Confirm MAC address and subnet broadcast are correct.
+-   Packet forwarding depends on correct interface configuration.
