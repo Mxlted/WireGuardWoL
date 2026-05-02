@@ -14,14 +14,14 @@ traffic directly over the VPN.
 
 -   Listens for WoL packets on a WireGuard interface
 -   Forwards packets to LAN broadcast address
--   Lightweight Python implementation using Scapy
+-   Zero-dependency Python implementation (stdlib only)
 -   Runs as a persistent systemd service
 
 ## Requirements
 
 -   Raspberry Pi or Linux host running Debian or Raspberry Pi OS
 -   WireGuard configured and active
--   Python 3
+-   Python 3 (no pip packages needed)
 -   Root privileges
 
 ## Network Assumptions
@@ -65,11 +65,11 @@ sudo iptables -A INPUT -i wg0 -p udp --dport 9 -j ACCEPT
 
 Skip this step if using ufw.
 
-### 3. Install Dependencies
+### 3. Install Python 3
 
 ``` bash
 sudo apt update
-sudo apt install python3-pip python3-scapy -y
+sudo apt install python3 -y
 ```
 
 ### 4. Create Forwarder Script
@@ -82,40 +82,42 @@ Paste the following:
 
 ``` python
 #!/usr/bin/env python3
-from scapy.all import sniff, Ether, IP, UDP, Raw, sendp
+import socket
 
 VPN_IFACE = "wg0"
 LAN_IFACE = "eth0"
 LAN_BROADCAST_IP = "192.168.1.255"
+WOL_PORT = 9
+SO_BINDTODEVICE = 25
 
-def is_wol_magic_packet(packet):
-    payload = bytes(packet[Raw])
+
+def is_wol_magic_packet(payload):
     return payload.startswith(b'\xff' * 6)
 
-def forward_wol_packet(packet):
-    payload = bytes(packet[Raw])
-    mac_addr = ':'.join(f'{b:02x}' for b in payload[6:12])
 
-    print(f"Detected WoL packet for {mac_addr}")
+def main():
+    recv_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    recv_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    recv_sock.setsockopt(socket.SOL_SOCKET, SO_BINDTODEVICE, VPN_IFACE.encode())
+    recv_sock.bind(('', WOL_PORT))
 
-    wol_packet = (
-        Ether(dst="ff:ff:ff:ff:ff:ff")
-        / IP(dst=LAN_BROADCAST_IP)
-        / UDP(sport=9, dport=9)
-        / Raw(load=payload)
-    )
+    send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    send_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    send_sock.setsockopt(socket.SOL_SOCKET, SO_BINDTODEVICE, LAN_IFACE.encode())
 
-    sendp(wol_packet, iface=LAN_IFACE, verbose=False)
+    print("🔎 Listening for WoL packets on wg0...")
+
+    while True:
+        payload, addr = recv_sock.recvfrom(1024)
+        if is_wol_magic_packet(payload):
+            mac_addr = ':'.join(f'{b:02x}' for b in payload[6:12])
+            print(f"✅ Detected WoL magic packet for MAC: {mac_addr}. Forwarding...")
+            send_sock.sendto(payload, (LAN_BROADCAST_IP, WOL_PORT))
+            print(f"📤 Forwarded magic packet to LAN (eth0).")
+
 
 if __name__ == "__main__":
-    print("Listening for WoL packets on wg0")
-    sniff(
-        iface=VPN_IFACE,
-        filter="udp and udp dst port 9",
-        prn=lambda pkt: forward_wol_packet(pkt)
-        if Raw in pkt and is_wol_magic_packet(pkt)
-        else None,
-    )
+    main()
 ```
 
 Make executable:
